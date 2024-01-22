@@ -1,5 +1,5 @@
 {
   "type": "PTE",
-  "templateUrl": "https://github.com/ARQUICONSULT-ES/ARQUI-Go-PTE-Translated@main",
+  "templateUrl": "https://github.com/ARQUICONSULT-ES/ARQUI-Go-PTE-Translated@v4.0",
   "runs-on": "self-hosted"
 }
