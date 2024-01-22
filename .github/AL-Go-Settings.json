@@ -1,4 +1,5 @@
 {
   "type": "PTE",
-  "templateUrl": "https://github.com/microsoft/AL-Go-PTE@v4.0"
+  "templateUrl": "https://github.com/ARQUICONSULT-ES/ARQUI-Go-PTE-Translated@main",
+  "runs-on": "self-hosted"
 }

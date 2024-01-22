@@ -1,6 +1,10 @@
 {
-  "country": "us",
-  "appFolders": [],
+  "country": "es",
+  "appFolders": [
+    "."
+  ],
   "testFolders": [],
-  "bcptTestFolders": []
+  "bcptTestFolders": [],
+  "skipUpgrade": true,
+  "repoVersion": "21.0"
 }
