@@ -1,8 +1,8 @@
-name: 'Pull Request Build'
+name: "Pull Request Build"
 
 on:
   pull_request_target:
-    branches: [ 'main' ]
+    branches: ["main"]
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
@@ -25,14 +25,14 @@ env:
 jobs:
   PregateCheck:
     if: (github.event.pull_request.base.repo.full_name != github.event.pull_request.head.repo.full_name) && (github.event_name != 'pull_request')
-    runs-on: [ windows-latest ]
+    runs-on: [self-hosted]
     steps:
       - uses: microsoft/AL-Go-Actions/VerifyPRChanges@v4.0
 
   Initialization:
-    needs: [ PregateCheck ]
+    needs: [PregateCheck]
     if: (!failure() && !cancelled())
-    runs-on: [ windows-latest ]
+    runs-on: [self-hosted]
     outputs:
       telemetryScopeJson: ${{ steps.init.outputs.telemetryScopeJson }}
       githubRunner: ${{ steps.ReadSettings.outputs.GitHubRunnerJson }}
@@ -74,7 +74,7 @@ jobs:
           maxBuildDepth: ${{ env.workflowDepth }}
 
   Build:
-    needs: [ Initialization ]
+    needs: [Initialization]
     if: (!failure()) && (!cancelled()) && fromJson(needs.Initialization.outputs.buildOrderJson)[0].projectsCount > 0
     strategy:
       matrix:
@@ -92,12 +92,12 @@ jobs:
       projectName: ${{ matrix.projectName }}
       buildMode: ${{ matrix.buildMode }}
       projectDependenciesJson: ${{ needs.Initialization.outputs.projectDependenciesJson }}
-      secrets: 'licenseFileUrl,keyVaultCertificateUrl,*keyVaultCertificatePassword,keyVaultClientId,gitHubPackagesContext,applicationInsightsConnectionString'
+      secrets: "licenseFileUrl,keyVaultCertificateUrl,*keyVaultCertificatePassword,keyVaultClientId,gitHubPackagesContext,applicationInsightsConnectionString"
       publishThisBuildArtifacts: ${{ needs.Initialization.outputs.workflowDepth > 1 }}
 
   StatusCheck:
-    runs-on: [ windows-latest ]
-    needs: [ Initialization, Build ]
+    runs-on: [self-hosted]
+    needs: [Initialization, Build]
     if: (!cancelled())
     name: Pull Request Status Check
     steps:

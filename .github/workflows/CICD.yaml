@@ -1,13 +1,13 @@
-name: ' CI/CD'
+name: " CI/CD"
 
 on:
   workflow_dispatch:
   push:
     paths-ignore:
-      - '**.md'
-      - '.github/workflows/*.yaml'
-      - '!.github/workflows/CICD.yaml'
-    branches: [ 'main', 'release/*', 'feature/*' ]
+      - "**.md"
+      - ".github/workflows/*.yaml"
+      - "!.github/workflows/CICD.yaml"
+    branches: ["main", "release/*", "feature/*"]
 
 defaults:
   run:
@@ -24,7 +24,7 @@ env:
 
 jobs:
   Initialization:
-    runs-on: [ windows-latest ]
+    runs-on: [self-hosted]
     outputs:
       telemetryScopeJson: ${{ steps.init.outputs.telemetryScopeJson }}
       environmentsMatrixJson: ${{ steps.DetermineDeploymentEnvironments.outputs.EnvironmentsMatrixJson }}
@@ -74,8 +74,8 @@ jobs:
         uses: microsoft/AL-Go-Actions/DetermineDeliveryTargets@v4.0
         with:
           shell: powershell
-          projectsJson: '${{ steps.determineProjectsToBuild.outputs.ProjectsJson }}'
-          checkContextSecrets: 'N'
+          projectsJson: "${{ steps.determineProjectsToBuild.outputs.ProjectsJson }}"
+          checkContextSecrets: "N"
 
       - name: Read secrets
         id: ReadSecrets
@@ -89,11 +89,11 @@ jobs:
         id: DetermineDeliveryTargets
         uses: microsoft/AL-Go-Actions/DetermineDeliveryTargets@v4.0
         env:
-          Secrets: '${{ steps.ReadSecrets.outputs.Secrets }}'
+          Secrets: "${{ steps.ReadSecrets.outputs.Secrets }}"
         with:
           shell: powershell
-          projectsJson: '${{ steps.determineProjectsToBuild.outputs.ProjectsJson }}'
-          checkContextSecrets: 'Y'
+          projectsJson: "${{ steps.determineProjectsToBuild.outputs.ProjectsJson }}"
+          checkContextSecrets: "Y"
 
       - name: Determine Deployment Environments
         id: DetermineDeploymentEnvironments
@@ -102,12 +102,12 @@ jobs:
           GITHUB_TOKEN: ${{ github.token }}
         with:
           shell: powershell
-          getEnvironments: '*'
-          type: 'CD'
+          getEnvironments: "*"
+          type: "CD"
 
   CheckForUpdates:
-    runs-on: [ windows-latest ]
-    needs: [ Initialization ]
+    runs-on: [self-hosted]
+    needs: [Initialization]
     steps:
       - name: Checkout
         uses: actions/checkout@v3
@@ -126,7 +126,7 @@ jobs:
           templateUrl: ${{ env.templateUrl }}
 
   Build:
-    needs: [ Initialization ]
+    needs: [Initialization]
     if: (!failure()) && (!cancelled()) && fromJson(needs.Initialization.outputs.buildOrderJson)[0].projectsCount > 0
     strategy:
       matrix:
@@ -143,14 +143,14 @@ jobs:
       projectName: ${{ matrix.projectName }}
       buildMode: ${{ matrix.buildMode }}
       projectDependenciesJson: ${{ needs.Initialization.outputs.projectDependenciesJson }}
-      secrets: 'licenseFileUrl,codeSignCertificateUrl,*codeSignCertificatePassword,keyVaultCertificateUrl,*keyVaultCertificatePassword,keyVaultClientId,gitHubPackagesContext,applicationInsightsConnectionString'
+      secrets: "licenseFileUrl,codeSignCertificateUrl,*codeSignCertificatePassword,keyVaultCertificateUrl,*keyVaultCertificatePassword,keyVaultClientId,gitHubPackagesContext,applicationInsightsConnectionString"
       publishThisBuildArtifacts: ${{ needs.Initialization.outputs.workflowDepth > 1 }}
       publishArtifacts: ${{ github.ref_name == 'main' || startswith(github.ref_name, 'release/') || needs.Initialization.outputs.deliveryTargetsJson != '[]' || needs.Initialization.outputs.environmentCount > 0 }}
       signArtifacts: true
       useArtifactCache: true
 
   Deploy:
-    needs: [ Initialization, Build ]
+    needs: [Initialization, Build]
     if: always() && needs.Build.result == 'Success' && needs.Initialization.outputs.environmentCount > 0
     strategy: ${{ fromJson(needs.Initialization.outputs.environmentsMatrixJson) }}
     runs-on: ${{ fromJson(matrix.os) }}
@@ -165,7 +165,7 @@ jobs:
       - name: Download artifacts
         uses: actions/download-artifact@v3
         with:
-          path: '.artifacts'
+          path: ".artifacts"
 
       - name: Read settings
         uses: microsoft/AL-Go-Actions/ReadSettings@v4.0
@@ -185,28 +185,28 @@ jobs:
         with:
           shell: powershell
           gitHubSecrets: ${{ toJson(secrets) }}
-          getSecrets: '${{ steps.envName.outputs.envName }}-AuthContext,${{ steps.envName.outputs.envName }}_AuthContext,AuthContext,${{ steps.envName.outputs.envName }}-EnvironmentName,${{ steps.envName.outputs.envName }}_EnvironmentName,EnvironmentName,projects'
+          getSecrets: "${{ steps.envName.outputs.envName }}-AuthContext,${{ steps.envName.outputs.envName }}_AuthContext,AuthContext,${{ steps.envName.outputs.envName }}-EnvironmentName,${{ steps.envName.outputs.envName }}_EnvironmentName,EnvironmentName,projects"
 
       - name: Deploy
         id: Deploy
         uses: microsoft/AL-Go-Actions/Deploy@v4.0
         env:
-          Secrets: '${{ steps.ReadSecrets.outputs.Secrets }}'
+          Secrets: "${{ steps.ReadSecrets.outputs.Secrets }}"
         with:
           shell: powershell
           environmentName: ${{ matrix.environment }}
-          artifacts: '.artifacts'
-          type: 'CD'
+          artifacts: ".artifacts"
+          type: "CD"
           deploymentEnvironmentsJson: ${{ needs.Initialization.outputs.deploymentEnvironmentsJson }}
 
   Deliver:
-    needs: [ Initialization, Build ]
+    needs: [Initialization, Build]
     if: always() && needs.Build.result == 'Success' && needs.Initialization.outputs.deliveryTargetsJson != '[]'
     strategy:
       matrix:
         deliveryTarget: ${{ fromJson(needs.Initialization.outputs.deliveryTargetsJson) }}
       fail-fast: false
-    runs-on: [ windows-latest ]
+    runs-on: [self-hosted]
     name: Deliver to ${{ matrix.deliveryTarget }}
     steps:
       - name: Checkout
@@ -215,7 +215,7 @@ jobs:
       - name: Download artifacts
         uses: actions/download-artifact@v3
         with:
-          path: '.artifacts'
+          path: ".artifacts"
 
       - name: Read settings
         uses: microsoft/AL-Go-Actions/ReadSettings@v4.0
@@ -228,23 +228,23 @@ jobs:
         with:
           shell: powershell
           gitHubSecrets: ${{ toJson(secrets) }}
-          getSecrets: '${{ matrix.deliveryTarget }}Context'
+          getSecrets: "${{ matrix.deliveryTarget }}Context"
 
       - name: Deliver
         uses: microsoft/AL-Go-Actions/Deliver@v4.0
         env:
-          Secrets: '${{ steps.ReadSecrets.outputs.Secrets }}'
+          Secrets: "${{ steps.ReadSecrets.outputs.Secrets }}"
         with:
           shell: powershell
-          type: 'CD'
+          type: "CD"
           projects: ${{ needs.Initialization.outputs.projects }}
           deliveryTarget: ${{ matrix.deliveryTarget }}
-          artifacts: '.artifacts'
+          artifacts: ".artifacts"
 
   PostProcess:
     if: (!cancelled())
-    runs-on: [ windows-latest ]
-    needs: [ Initialization, Build, Deploy, Deliver ]
+    runs-on: [self-hosted]
+    needs: [Initialization, Build, Deploy, Deliver]
     steps:
       - name: Checkout
         uses: actions/checkout@v3

@@ -1,4 +1,4 @@
-name: 'Create a new performance test app'
+name: "Create a new performance test app"
 
 run-name: "Create a new performance test app in [${{ github.ref_name }}]"
 
@@ -8,30 +8,30 @@ on:
       project:
         description: Project name if the repository is setup for multiple projects
         required: false
-        default: '.'
+        default: "."
       name:
         description: Name
         required: true
-        default: '<YourAppName>.PerformanceTest'
+        default: "<YourAppName>.PerformanceTest"
       publisher:
         description: Publisher
         required: true
       idrange:
         description: ID range
         required: true
-        default: '50000..99999'
+        default: "50000..99999"
       sampleCode:
         description: Include Sample code (Y/N)
         required: false
-        default: 'Y'
+        default: "Y"
       sampleSuite:
         description: Include Sample BCPT Suite (Y/N)
         required: false
-        default: 'Y'
+        default: "Y"
       directCommit:
         description: Direct COMMIT (Y/N)
         required: false
-        default: 'N'
+        default: "N"
       useGhTokenWorkflow:
         description: Use GhTokenWorkflow for Pull Request/COMMIT
         type: boolean
@@ -50,7 +50,7 @@ env:
 
 jobs:
   CreatePerformanceTestApp:
-    runs-on: [ windows-latest ]
+    runs-on: [self-hosted]
     steps:
       - name: Checkout
         uses: actions/checkout@v3
@@ -73,8 +73,8 @@ jobs:
         with:
           shell: powershell
           gitHubSecrets: ${{ toJson(secrets) }}
-          getSecrets: 'TokenForPush'
-          useGhTokenWorkflowForPush: '${{ github.event.inputs.useGhTokenWorkflow }}'
+          getSecrets: "TokenForPush"
+          useGhTokenWorkflowForPush: "${{ github.event.inputs.useGhTokenWorkflow }}"
 
       - name: Creating a new test app
         uses: microsoft/AL-Go-Actions/CreateApp@v4.0
@@ -83,7 +83,7 @@ jobs:
           token: ${{ steps.ReadSecrets.outputs.TokenForPush }}
           parentTelemetryScopeJson: ${{ steps.init.outputs.telemetryScopeJson }}
           project: ${{ github.event.inputs.project }}
-          type: 'Performance Test App'
+          type: "Performance Test App"
           name: ${{ github.event.inputs.name }}
           publisher: ${{ github.event.inputs.publisher }}
           idrange: ${{ github.event.inputs.idrange }}

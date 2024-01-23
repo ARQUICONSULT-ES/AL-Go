@@ -76,7 +76,7 @@ By specifying a custom EnvironmentType in the DeployTo structure for an environm
 | `$parameters.BranchesFromPolicy` | Branches which should deploy to this environment (from GitHub environments) | main |
 | `$parameters.Projects` | Projects to deploy to this environment | |
 | `$parameters.ContinuousDeployment` | Is this environment setup for continuous deployment | false |
-| `$parameters."runs-on"` | GitHub runner to be used to run the deployment script | windows-latest |
+| `$parameters."runs-on"` | GitHub runner to be used to run the deployment script | self-hosted |
 
 ### Status Checks in Pull Requests
 

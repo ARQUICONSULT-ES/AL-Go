@@ -1,4 +1,4 @@
-name: 'Create a new app'
+name: "Create a new app"
 
 run-name: "Create a new app in [${{ github.ref_name }}]"
 
@@ -8,7 +8,7 @@ on:
       project:
         description: Project name if the repository is setup for multiple projects
         required: false
-        default: '.'
+        default: "."
       name:
         description: Name
         required: true
@@ -21,7 +21,7 @@ on:
       sampleCode:
         description: Include Sample code (Y/N)
         required: false
-        default: 'Y'
+        default: "Y"
       directCommit:
         description: Direct COMMIT (Y/N)
         required: false
@@ -44,7 +44,7 @@ env:
 
 jobs:
   CreateApp:
-    runs-on: [ windows-latest ]
+    runs-on: [self-hosted]
     steps:
       - name: Checkout
         uses: actions/checkout@v3
@@ -68,8 +68,8 @@ jobs:
         with:
           shell: powershell
           gitHubSecrets: ${{ toJson(secrets) }}
-          getSecrets: 'TokenForPush'
-          useGhTokenWorkflowForPush: '${{ github.event.inputs.useGhTokenWorkflow }}'
+          getSecrets: "TokenForPush"
+          useGhTokenWorkflowForPush: "${{ github.event.inputs.useGhTokenWorkflow }}"
 
       - name: Creating a new app
         uses: microsoft/AL-Go-Actions/CreateApp@v4.0

@@ -1,4 +1,4 @@
-name: ' Create Online Dev. Environment'
+name: " Create Online Dev. Environment"
 
 run-name: "Create Online Dev. Environment for [${{ github.ref_name }} / ${{ github.event.inputs.project }}]"
 
@@ -8,18 +8,18 @@ on:
       project:
         description: Project name if the repository is setup for multiple projects
         required: false
-        default: '.'
+        default: "."
       environmentName:
         description: Name of the online environment
         required: true
       reUseExistingEnvironment:
         description: Reuse environment if it exists
         required: false
-        default: 'N'
+        default: "N"
       directCommit:
         description: Direct COMMIT (Y/N)
         required: false
-        default: 'N'
+        default: "N"
       useGhTokenWorkflow:
         description: Use GhTokenWorkflow for Pull Request/COMMIT
         type: boolean
@@ -38,7 +38,7 @@ env:
 
 jobs:
   Initialization:
-    runs-on: [ windows-latest ]
+    runs-on: [self-hosted]
     outputs:
       deviceCode: ${{ steps.authenticate.outputs.deviceCode }}
       telemetryScopeJson: ${{ steps.init.outputs.telemetryScopeJson }}
@@ -67,7 +67,7 @@ jobs:
         with:
           shell: powershell
           gitHubSecrets: ${{ toJson(secrets) }}
-          getSecrets: 'adminCenterApiCredentials'
+          getSecrets: "adminCenterApiCredentials"
 
       - name: Check AdminCenterApiCredentials / Initiate Device Login (open to see code)
         id: authenticate
@@ -96,7 +96,7 @@ jobs:
       run:
         shell: ${{ needs.Initialization.outputs.githubRunnerShell }}
     name: Create Development Environment
-    needs: [ Initialization ]
+    needs: [Initialization]
     env:
       deviceCode: ${{ needs.Initialization.outputs.deviceCode }}
     steps:
@@ -114,8 +114,8 @@ jobs:
         with:
           shell: powershell
           gitHubSecrets: ${{ toJson(secrets) }}
-          getSecrets: 'adminCenterApiCredentials,TokenForPush'
-          useGhTokenWorkflowForPush: '${{ github.event.inputs.useGhTokenWorkflow }}'
+          getSecrets: "adminCenterApiCredentials,TokenForPush"
+          useGhTokenWorkflowForPush: "${{ github.event.inputs.useGhTokenWorkflow }}"
 
       - name: Set AdminCenterApiCredentials
         id: SetAdminCenterApiCredentials
