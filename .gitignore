@@ -1,7 +1,7 @@
 *.app
 *.flf
 *.bclicense
-*.xlf
+*.g.xlf
 .DS_Store
 Thumbs.db
 TestResults*.xml
@@ -15,8 +15,7 @@ rad.json
 .packages/
 .alcache/
 .altemplates/
+.altestrunner/
 .snapshots/
-.vscode/*
-!.vscode/settings.json
 cache_*
 ~$*
