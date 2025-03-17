@@ -1,5 +1,5 @@
 {
   "type": "PTE",
-  "templateUrl": "https://github.com/ARQUICONSULT-ES/ARQUI-Go-PTE-Translated@Fix_CheckForUpdates",
+  "templateUrl": "https://github.com/ARQUICONSULT-ES/AL-Go@Fix_CheckForUpdates",
   "runs-on": "self-hosted"
 }
