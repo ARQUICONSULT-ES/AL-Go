@@ -1,5 +1,5 @@
 {
   "type": "PTE",
-  "templateUrl": "https://github.com/ARQUICONSULT-ES/AL-Go@Test-CheckForUpdates",
+  "templateUrl": "https://github.com/ARQUICONSULT-ES/AL-Go@main",
   "runs-on": "self-hosted"
 }
