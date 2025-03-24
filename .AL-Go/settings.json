@@ -6,5 +6,6 @@
   "testFolders": [],
   "bcptTestFolders": [],
   "skipUpgrade": true,
-  "repoVersion": "1.0"
+  "repoVersion": "1.0",
+  "alwaysBuildAllProjects": true
 }
