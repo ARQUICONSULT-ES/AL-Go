@@ -2,6 +2,7 @@
 *.flf
 *.bclicense
 *.g.xlf
+*.xlf
 .DS_Store
 Thumbs.db
 TestResults*.xml
@@ -19,4 +20,5 @@ rad.json
 .snapshots/
 cache_*
 ~$*
-*.xlf
+.vscode/*
+!.vscode/settings.json
