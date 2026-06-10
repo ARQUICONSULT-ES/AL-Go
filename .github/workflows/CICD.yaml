@@ -158,6 +158,12 @@ jobs:
           templateUrl: ${{ env.templateUrl }}
           downloadLatest: true
 
+  FastCompile:
+    needs: [ Initialization ]
+    if: (!failure()) && (!cancelled())
+    uses: ./.github/workflows/FastCompile.yaml
+    secrets: inherit
+
   Build:
     needs: [ Initialization ]
     if: (!failure()) && (!cancelled()) && fromJson(needs.Initialization.outputs.buildOrderJson)[0].projectsCount > 0

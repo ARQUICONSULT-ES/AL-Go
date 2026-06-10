@@ -1,0 +1,413 @@
+name: 'Fast Compile'
+run-name: "Fast Compile [${{ github.ref_name }}]"
+
+on:
+  workflow_dispatch:
+  workflow_call:
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: powershell
+
+env:
+  OUTPUT_PATH: '.output'
+
+jobs:
+  FastCompile:
+    runs-on: [ self-hosted ]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install/Update BcContainerHelper
+        run: |
+          $ErrorActionPreference = "Stop"
+          $module = Get-Module -ListAvailable -Name BcContainerHelper | Sort-Object Version -Descending | Select-Object -First 1
+          if (-not $module) {
+            Write-Host "Installing BcContainerHelper..."
+            Install-Module BcContainerHelper -Force -SkipPublisherCheck -AllowClobber
+          } else {
+            Write-Host "BcContainerHelper already installed: $($module.Version)"
+            Write-Host "Updating BcContainerHelper to latest..."
+            Update-Module BcContainerHelper -Force
+          }
+          Import-Module BcContainerHelper
+          Write-Host "BcContainerHelper ready."
+
+      - name: Resolve Compiler Folder
+        id: compiler
+        run: |
+          $ErrorActionPreference = "Stop"
+          Import-Module BcContainerHelper
+
+          # Leer todas las pistas de version del app.json para determinar la BC version objetivo
+          $manifest = Get-Content -Raw -Path "app.json" | ConvertFrom-Json
+          $versionHints = @()
+
+          # application y platform indican directamente la version objetivo de BC
+          foreach ($field in @('application', 'platform')) {
+            if ($manifest.$field) {
+              $major = [int]($manifest.$field -split '\.')[0]
+              if ($major -gt 0) {
+                $versionHints += $major
+                Write-Host "[INFO] Version hint from app.json.$field : $major"
+              }
+            }
+          }
+
+          # runtime indica la version del lenguaje AL requerida.
+          # Cada major version de BC distribuye un AL compiler con un runtime especifico.
+          # La correlacion empirica de Microsoft (BC 23->runtime 12, BC 24->13, BC 25->14, BC 26->15...)
+          # permite estimar: BC version minima = runtime major + 11
+          if ($manifest.runtime) {
+            $runtimeMajor = [int]($manifest.runtime -split '\.')[0]
+            $derivedFromRuntime = $runtimeMajor + 11
+            $versionHints += $derivedFromRuntime
+            Write-Host "[INFO] Version hint from app.json.runtime '$($manifest.runtime)' -> BC $derivedFromRuntime"
+          }
+
+          if ($versionHints.Count -eq 0) {
+            $bcVersion = 25
+            Write-Host "[WARN] No version info found in app.json, defaulting to BC $bcVersion"
+          } else {
+            # Usar la version mas alta de todas las pistas para asegurar compatibilidad
+            $bcVersion = $versionHints | Sort-Object -Descending | Select-Object -First 1
+            Write-Host "[INFO] Selected highest BC version from all hints: $bcVersion"
+          }
+          Add-Content -Encoding UTF8 -Path $env:GITHUB_OUTPUT -Value "bcVersion=$bcVersion"
+
+          # Crear compiler folder (reutiliza artifact cacheado si existe)
+          $compilerBase = "C:\ProgramData\BcContainerHelper\compiler"
+          $artifactUrl = Get-BCArtifactUrl -type Sandbox -country es -version $bcVersion -select Latest
+          if (-not $artifactUrl) {
+            throw "Could not determine artifact URL for BC $bcVersion"
+          }
+          Write-Host "[INFO] Artifact URL: $artifactUrl"
+          Write-Host "[INFO] Creating compiler folder for BC $bcVersion..."
+          New-BcCompilerFolder -artifactUrl $artifactUrl
+
+          $compilerFolder = Get-ChildItem -Path $compilerBase -Directory | Sort-Object LastWriteTime -Descending | Select-Object -First 1
+          Write-Host "[OK] Compiler folder: $($compilerFolder.FullName)"
+          Add-Content -Encoding UTF8 -Path $env:GITHUB_OUTPUT -Value "path=$($compilerFolder.FullName)"
+
+          # Limpiar compiler folders antiguos (mantener solo los 2 mas recientes)
+          $allFolders = Get-ChildItem -Path $compilerBase -Directory | Sort-Object LastWriteTime -Descending
+          if ($allFolders.Count -gt 2) {
+            $allFolders | Select-Object -Skip 2 | ForEach-Object {
+              Write-Host "[CLEANUP] Removing old compiler folder: $($_.FullName)"
+              Remove-Item -Path $_.FullName -Recurse -Force
+            }
+          }
+
+      - name: Download External Dependencies
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          GHTOKENWORKFLOW: ${{ secrets.GHTOKENWORKFLOW }}
+        run: |
+          $ErrorActionPreference = "Stop"
+          $pkgDir = (Resolve-Path ".alpackages" -ErrorAction SilentlyContinue).Path
+          if (-not $pkgDir) {
+            $pkgDir = Join-Path (Get-Location).Path ".alpackages"
+            New-Item -ItemType Directory -Path $pkgDir -Force | Out-Null
+            $pkgDir = (Resolve-Path $pkgDir).Path
+          }
+
+          # Token (PAT para repos privados, fallback a github.token)
+          $ghToken = $env:GHTOKENWORKFLOW
+          if (-not $ghToken) { $ghToken = $env:GITHUB_TOKEN }
+
+          # Leer appDependencyProbingPaths desde settings de AL-Go
+          $probingPaths = @()
+          $settingsFiles = @(".AL-Go\settings.json", ".github\AL-Go-Settings.json")
+          foreach ($sf in $settingsFiles) {
+            if (Test-Path $sf) {
+              $settings = Get-Content -Raw -Path $sf | ConvertFrom-Json
+              if ($settings.appDependencyProbingPaths) {
+                $probingPaths += $settings.appDependencyProbingPaths
+              }
+            }
+          }
+
+          # Leer dependencias del app.json
+          $manifest = Get-Content -Raw -Path "app.json" | ConvertFrom-Json
+
+          # Helper: descargar asset .app o .zip desde un release de GitHub
+          function Download-GitHubReleaseApp {
+            param([string]$Repo, [string]$AppNamePattern, [string]$OutDir, [string]$Token)
+
+            $headers = @{
+              "User-Agent" = "PowerShell"
+              "Accept"     = "application/vnd.github+json"
+              "X-GitHub-Api-Version" = "2022-11-28"
+            }
+            $authToken = if ($Token) { $Token } else { $env:GITHUB_TOKEN }
+            if ($authToken) {
+              $headers["Authorization"] = "Bearer $authToken"
+            }
+
+            try {
+              $release = Invoke-RestMethod -Uri "https://api.github.com/repos/$Repo/releases/latest" -Headers $headers
+            } catch {
+              Write-Host "[WARN] Could not query releases for $Repo`: $_"
+              return $null
+            }
+
+            # 1) Buscar asset .app directo
+            $asset = $null
+            if ($AppNamePattern) {
+              $asset = $release.assets | Where-Object { $_.name -like "*$AppNamePattern*.app" } | Select-Object -First 1
+            } else {
+              $asset = $release.assets | Where-Object { $_.name -like "*.app" } | Select-Object -First 1
+            }
+
+            # 2) Si no hay .app, buscar .zip y extraer
+            if (-not $asset) {
+              # Buscar cualquier ZIP del release (excluir Source code)
+              $zipAsset = $release.assets | Where-Object { $_.name -like "*.zip" -and $_.name -notlike "*Source*" } | Select-Object -First 1
+
+              if ($zipAsset) {
+                Write-Host "[DOWNLOAD] ZIP asset '$($zipAsset.name)' from $Repo..."
+                $zipPath = Join-Path $env:TEMP $zipAsset.name
+                $dlHeaders = $headers.Clone()
+                $dlHeaders["Accept"] = "application/octet-stream"
+                Invoke-WebRequest -Uri $zipAsset.url -OutFile $zipPath -Headers $dlHeaders
+
+                $extractTmp = Join-Path $env:TEMP "gh-release-$([Guid]::NewGuid().ToString())"
+                New-Item -ItemType Directory -Path $extractTmp -Force | Out-Null
+                Expand-Archive -Path $zipPath -DestinationPath $extractTmp -Force
+
+                Write-Host "[EXTRACT] ZIP contents:"
+                Get-ChildItem -Path $extractTmp -Recurse -Filter "*.app" | ForEach-Object { Write-Host "  - $($_.FullName)" }
+
+                $foundApp = $null
+                if ($AppNamePattern) {
+                  $foundApp = Get-ChildItem -Path $extractTmp -Recurse -Filter "*$AppNamePattern*.app" | Select-Object -First 1
+                } else {
+                  $foundApp = Get-ChildItem -Path $extractTmp -Recurse -Filter "*.app" | Select-Object -First 1
+                }
+
+                if ($foundApp) {
+                  $outFile = Join-Path $OutDir $foundApp.Name
+                  Copy-Item -Path $foundApp.FullName -Destination $outFile -Force
+                  Write-Host "[OK] Extracted $($foundApp.Name) from ZIP"
+                  Remove-Item -Path $zipPath -Force -ErrorAction SilentlyContinue
+                  Remove-Item -Path $extractTmp -Recurse -Force -ErrorAction SilentlyContinue
+                  return $outFile
+                }
+
+                Remove-Item -Path $zipPath -Force -ErrorAction SilentlyContinue
+                Remove-Item -Path $extractTmp -Recurse -Force -ErrorAction SilentlyContinue
+                Write-Host "[WARN] No .app found inside ZIP asset in $Repo"
+                return $null
+              } else {
+                Write-Host "[WARN] No .zip asset found in release of $Repo"
+              }
+            }
+
+            if (-not $asset) {
+              Write-Host "[WARN] No .app or .zip asset found in latest release of $Repo"
+              Write-Host "[DEBUG] API response assets: $($release.assets | ConvertTo-Json -Depth 3 -Compress)"
+              return $null
+            }
+
+            $outFile = Join-Path $OutDir $asset.name
+            Write-Host "[DOWNLOAD] $($asset.name) from $Repo..."
+            $dlHeaders = $headers.Clone()
+            $dlHeaders["Accept"] = "application/octet-stream"
+            Invoke-WebRequest -Uri $asset.url -OutFile $outFile -Headers $dlHeaders
+            Write-Host "[OK] Saved to $outFile"
+            return $outFile
+          }
+
+          # Descargar cada dependencia que falte
+          foreach ($dep in $manifest.dependencies) {
+            $depName = $dep.name
+            $found = Get-ChildItem -Path $pkgDir -Filter "*$depName*.app" -ErrorAction SilentlyContinue | Select-Object -First 1
+            if ($found) {
+              Write-Host "[OK] $depName already in .alpackages/"
+              continue
+            }
+
+            $downloaded = $false
+            foreach ($probe in $probingPaths) {
+              $repoUrl = $probe.repo
+              if (-not $repoUrl) { continue }
+
+              $repoUrl = $repoUrl.TrimEnd('/')
+              if ($repoUrl -match 'github\.com/([^/]+)/([^/]+)') {
+                $repoFullName = "$($Matches[1])/$($Matches[2])"
+                Write-Host "[PROBE] Searching $depName in $repoFullName ..."
+                $releaseApp = Download-GitHubReleaseApp -Repo $repoFullName -AppNamePattern $depName -OutDir $pkgDir -Token $ghToken
+                if ($releaseApp) {
+                  $downloaded = $true
+                  break
+                }
+              }
+            }
+
+            if (-not $downloaded) {
+              Write-Host "::warning::Dependency '$depName' could not be downloaded from appDependencyProbingPaths."
+            }
+          }
+
+      - name: Prepare Dependencies
+        run: |
+          $ErrorActionPreference = "Stop"
+          $alpackages = ".alpackages"
+          if (-not (Test-Path $alpackages)) {
+            New-Item -ItemType Directory -Path $alpackages -Force | Out-Null
+          }
+          
+          $manifest = Get-Content -Raw -Path "app.json" | ConvertFrom-Json
+          $missingDeps = @()
+          foreach ($dep in $manifest.dependencies) {
+            $found = Get-ChildItem -Path $alpackages -Filter "*$($dep.name)*.app" -ErrorAction SilentlyContinue | Select-Object -First 1
+            if (-not $found) {
+              $missingDeps += $dep.name
+              Write-Host "::warning::DEPENDENCY MISSING: '$($dep.name)' ($($dep.publisher)) was not found in .alpackages/"
+            } else {
+              Write-Host "[OK] Dependency found: $($found.Name)"
+            }
+          }
+          
+          if ($missingDeps.Count -gt 0) {
+            Write-Host ""
+            Write-Host "::warning::Total missing dependencies: $($missingDeps.Count)"
+            Write-Host "Available files in .alpackages/:"
+            Get-ChildItem -Path $alpackages -ErrorAction SilentlyContinue | ForEach-Object { Write-Host "  - $($_.Name)" }
+          } else {
+            Write-Host "[OK] All $($manifest.dependencies.Count) dependencies found in .alpackages/"
+          }
+
+      - name: Compile App
+        id: compile
+        run: |
+          $ErrorActionPreference = "Stop"
+          Import-Module BcContainerHelper
+          
+          # Inyectar temporalmente dependencias de Microsoft para CI/CD
+          # (en VS Code contra un sandbox, el servidor las resuelve implicitamente)
+          $appJsonPath = Join-Path (Get-Location).Path "app.json"
+          $appJsonBak = "$appJsonPath.bak"
+          Copy-Item -Path $appJsonPath -Destination $appJsonBak -Force
+          
+          $manifest = Get-Content -Raw -Path $appJsonPath | ConvertFrom-Json
+          $bcVersion = ($manifest.application -split '\.')[0] + ".0.0.0"
+          if (-not $manifest.application) { $bcVersion = ($manifest.platform -split '\.')[0] + ".0.0.0" }
+          
+          # Nota: 'Application' no se inyecta porque la propiedad 'application' en app.json
+          # ya crea esa dependencia implicitamente. Inyectarla explicitamente genera AL0703.
+          $msDeps = @(
+            @{ id = "63ca2fa4-4f03-4f2b-a480-172fef340d3f"; name = "System Application"; publisher = "Microsoft"; version = $bcVersion }
+            @{ id = "437dbf0e-84ff-417a-965d-ed2bb9650972"; name = "Base Application"; publisher = "Microsoft"; version = $bcVersion }
+          )
+          
+          $existingNames = $manifest.dependencies | ForEach-Object { $_.name }
+          $newDeps = @()
+          foreach ($msDep in $msDeps) {
+            if ($existingNames -notcontains $msDep.name) {
+              $newDeps += [ordered]@{ id = $msDep.id; name = $msDep.name; publisher = $msDep.publisher; version = $msDep.version }
+            }
+          }
+          
+          if ($newDeps.Count -gt 0) {
+            Write-Host "[INFO] Injecting $($newDeps.Count) Microsoft dependencies for CI/CD compilation"
+            $combinedDeps = $newDeps + $manifest.dependencies
+            $manifest.dependencies = $combinedDeps
+            $manifest | ConvertTo-Json -Depth 10 | Set-Content -Path $appJsonPath -Encoding UTF8
+          }
+          
+          $compilerFolder = "${{ steps.compiler.outputs.path }}"
+          $outputFolder = $env:OUTPUT_PATH
+          
+          if (-not (Test-Path $outputFolder)) {
+            New-Item -ItemType Directory -Path $outputFolder -Force | Out-Null
+          }
+          
+          Write-Host "Compiling with compiler folder: $compilerFolder"
+          Write-Host "Output folder: $outputFolder"
+          
+          try {
+            $resolvedOutput = (Resolve-Path $outputFolder).Path
+            Write-Host "[DEBUG] Resolved output folder: $resolvedOutput"
+            
+            $appFile = Compile-AppWithBcCompilerFolder `
+              -compilerFolder $compilerFolder `
+              -appProjectFolder (Resolve-Path ".").Path `
+              -appOutputFolder $resolvedOutput
+            
+            Write-Host "[DEBUG] Compile-AppWithBcCompilerFolder returned: $appFile"
+            Write-Host "[DEBUG] Checking if file exists..."
+            
+            if (-not $appFile -or -not (Test-Path $appFile)) {
+              Write-Host "::error::Compilation output not found at expected path: $appFile"
+              Write-Host "[DEBUG] Listing contents of $resolvedOutput`:"
+              Get-ChildItem -Path $resolvedOutput -Recurse -ErrorAction SilentlyContinue | ForEach-Object { Write-Host "  $($_.FullName)" }
+              throw "Compilation failed: output .app file not found"
+            }
+            
+            Write-Host "::notice::Successfully compiled: $appFile"
+            $fileName = Split-Path $appFile -Leaf
+            Add-Content -Encoding UTF8 -Path $env:GITHUB_OUTPUT -Value "appFile=$appFile"
+            Add-Content -Encoding UTF8 -Path $env:GITHUB_OUTPUT -Value "appFileName=$fileName"
+          } finally {
+            # Restaurar app.json original
+            if (Test-Path $appJsonBak) {
+              Move-Item -Path $appJsonBak -Destination $appJsonPath -Force
+              Write-Host "[INFO] Restored original app.json"
+            }
+          }
+
+      - name: Package as ZIP
+        id: package
+        run: |
+          $ErrorActionPreference = "Stop"
+          $outputPath = (Resolve-Path $env:OUTPUT_PATH).Path
+          
+          # Leer nombre y version desde app.json para el nombre del artifact
+          $manifest = Get-Content -Raw -Path "app.json" | ConvertFrom-Json
+          $artifactName = "$($manifest.name)_$($manifest.version).zip"
+          # Sanitizar nombre de artifact (quitar caracteres no validos para GitHub Actions)
+          $artifactName = $artifactName -replace '[\\/:*?"<>|]', '_'
+          
+          $zipFile = Join-Path $outputPath $artifactName
+          
+          # Buscar el .app generado (la variable de salida puede fallar por codificacion)
+          $appFile = Get-ChildItem -Path $outputPath -Filter "*.app" -File | Select-Object -First 1
+          if (-not $appFile) {
+            Write-Host "::error::No .app file found in $outputPath"
+            Write-Host "Contents of $outputPath`:"
+            Get-ChildItem -Path $outputPath -Recurse -ErrorAction SilentlyContinue | ForEach-Object { Write-Host "  $($_.FullName)" }
+            throw "Compilation output not found"
+          }
+          
+          Write-Host "[INFO] Packaging $($appFile.FullName) into $artifactName ..."
+          Compress-Archive -Path $appFile.FullName -DestinationPath $zipFile -Force
+          
+          if (-not (Test-Path $zipFile)) {
+            throw "ZIP file was not created at $zipFile"
+          }
+          
+          Write-Host "::notice::ZIP ready: $zipFile"
+          Add-Content -Encoding UTF8 -Path $env:GITHUB_OUTPUT -Value "zipFile=$zipFile"
+          Add-Content -Encoding UTF8 -Path $env:GITHUB_OUTPUT -Value "artifactName=$artifactName"
+
+      - name: Upload App Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.package.outputs.artifactName }}
+          path: ${{ steps.package.outputs.zipFile }}
+          if-no-files-found: error
+
+      - name: Summary
+        run: |
+          Write-Host "========================================"
+          Write-Host "FAST COMPILE COMPLETE"
+          Write-Host "========================================"
+          Write-Host "Output: ${{ env.OUTPUT_PATH }}"
+          Get-ChildItem -Path $env:OUTPUT_PATH | ForEach-Object {
+            Write-Host "Artifact: $($_.Name) | Size: $([math]::Round($_.Length/1KB,2)) KB"
+          }
