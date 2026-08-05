@@ -43,6 +43,7 @@ jobs:
       buildOrderJson: ${{ steps.determineProjectsToBuild.outputs.BuildOrderJson }}
       powerPlatformSolutionFolder: ${{ steps.DeterminePowerPlatformSolutionFolder.outputs.powerPlatformSolutionFolder }}
       workflowDepth: ${{ steps.DetermineWorkflowDepth.outputs.WorkflowDepth }}
+      runFullBuild: ${{ steps.DetermineRunFullBuild.outputs.RunFullBuild }}
     steps:
       - name: Dump Workflow Information
         uses: ARQUICONSULT-ES/AL-Go-Actions/DumpWorkflowInfo@v6.3
@@ -65,7 +66,7 @@ jobs:
         uses: ARQUICONSULT-ES/AL-Go-Actions/ReadSettings@v6.3
         with:
           shell: powershell
-          get: type,powerPlatformSolutionFolder,useGitSubmodules
+          get: type,powerPlatformSolutionFolder,useGitSubmodules,runFullBuild
 
       - name: Read submodules token
         id: ReadSubmodulesToken
@@ -88,6 +89,13 @@ jobs:
         id: DetermineWorkflowDepth
         run: |
           Add-Content -Encoding UTF8 -Path $env:GITHUB_OUTPUT -Value "WorkflowDepth=$($env:workflowDepth)"
+
+      - name: Determine Run Full Build
+        id: DetermineRunFullBuild
+        run: |
+          $runFullBuild = "$($env:runFullBuild)".ToLower()
+          if ($runFullBuild -ne 'true') { $runFullBuild = 'false' }
+          Add-Content -Encoding UTF8 -Path $env:GITHUB_OUTPUT -Value "RunFullBuild=$runFullBuild"
 
       - name: Determine Projects To Build
         id: determineProjectsToBuild
@@ -158,9 +166,15 @@ jobs:
           templateUrl: ${{ env.templateUrl }}
           downloadLatest: true
 
+  FastCompile:
+    needs: [ Initialization ]
+    if: (!failure()) && (!cancelled())
+    uses: ./.github/workflows/FastCompile.yaml
+    secrets: inherit
+
   Build:
     needs: [ Initialization ]
-    if: (!failure()) && (!cancelled()) && fromJson(needs.Initialization.outputs.buildOrderJson)[0].projectsCount > 0
+    if: (!failure()) && (!cancelled()) && needs.Initialization.outputs.runFullBuild == 'true' && fromJson(needs.Initialization.outputs.buildOrderJson)[0].projectsCount > 0
     strategy:
       matrix:
         include: ${{ fromJson(needs.Initialization.outputs.buildOrderJson)[0].buildDimensions }}

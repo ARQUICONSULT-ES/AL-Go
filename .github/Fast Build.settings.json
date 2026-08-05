@@ -1,0 +1,8 @@
+{
+  "country": "w1",
+  "useCompilerFolder": true,
+  "doNotPublishApps": true,
+  "doNotRunTests": true,
+  "doNotSignApps": true,
+  "doNotRunBcptTests": true
+}
