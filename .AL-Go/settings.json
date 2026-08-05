@@ -1,11 +1,13 @@
 {
-  "country": "es",
-  "appFolders": [
-    "."
-  ],
-  "testFolders": [],
-  "bcptTestFolders": [],
-  "skipUpgrade": true,
-  "repoVersion": "1.0",
-  "alwaysBuildAllProjects": true
+    "country":  "es",
+    "appFolders":  [
+                       "."
+                   ],
+    "testFolders":  [],
+    "bcptTestFolders":  [],
+    "appDependencyProbingPaths":  [],
+    "skipUpgrade":  true,
+    "repoVersion":  "1.0",
+    "alwaysBuildAllProjects":  true,
+    "runFullBuild":  false
 }
