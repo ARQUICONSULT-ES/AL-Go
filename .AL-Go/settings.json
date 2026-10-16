@@ -7,5 +7,7 @@
   "bcptTestFolders": [],
   "skipUpgrade": true,
   "repoVersion": "1.0",
-  "alwaysBuildAllProjects": true
+  "alwaysBuildAllProjects": true,
+  "useCompilerFolder": true,
+  "doNotPublishApps": true
 }
